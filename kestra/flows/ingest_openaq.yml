@@ -1,0 +1,121 @@
+id: ingest_openaq
+namespace: air_quality
+
+inputs:
+  - id: start_date
+    type: STRING
+    defaults: "2024-01-01"
+  - id: end_date
+    type: STRING
+    defaults: "2024-01-31"
+
+tasks:
+  - id: fetch_openaq_to_lake
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: python:3.11-slim
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - air_quality_lake:/lake
+    beforeCommands:
+      - pip install requests pandas pyarrow > /dev/null
+    env:
+      START_DATE: "{{ inputs.start_date }}"
+      END_DATE: "{{ inputs.end_date }}"
+      OPENAQ_API_KEY: "{{ secret('OPENAQ_API_KEY') }}"
+    script: |
+      import os, time, requests
+      import pandas as pd
+      from datetime import datetime, timezone
+
+      API = "https://api.openaq.org/v3"
+      HEADERS = {"X-API-Key": os.environ["OPENAQ_API_KEY"]}
+      CITIES = {
+          "Tunis": (36.81, 10.18),
+          "Madrid": (40.42, -3.70),
+          "Barcelona": (41.39, 2.17),
+          "Rome": (41.90, 12.50),
+          "Athens": (37.98, 23.73),
+          "Beirut": (33.89, 35.50),
+      }
+      WANTED = {"pm25", "pm10"}
+      MAX_STATIONS = 3
+
+      start = os.environ["START_DATE"]
+      end = os.environ["END_DATE"]
+      dt_from = f"{start}T00:00:00Z"
+      dt_to = f"{end}T23:59:59Z"
+
+      def get(path, params):
+          for _ in range(5):
+              r = requests.get(f"{API}{path}", headers=HEADERS, params=params, timeout=60)
+              if r.status_code == 429:
+                  time.sleep(30)
+                  continue
+              r.raise_for_status()
+              time.sleep(1.2)
+              return r.json()
+          raise RuntimeError("Trop de requetes (429)")
+
+      def covers(loc):
+          first = (loc.get("datetimeFirst") or {}).get("utc")
+          last = (loc.get("datetimeLast") or {}).get("utc")
+          return bool(first and last and first <= dt_from and last >= dt_to)
+
+      for city, (lat, lon) in CITIES.items():
+          locs = get("/locations", {
+              "coordinates": f"{lat},{lon}", "radius": 25000, "limit": 1000
+          }).get("results", [])
+
+          candidates = []
+          for loc in locs:
+              sensors = [s for s in loc.get("sensors", [])
+                         if (s.get("parameter") or {}).get("name") in WANTED]
+              if sensors and covers(loc):
+                  candidates.append((loc, sensors))
+
+          print(f"{city}: {len(locs)} stations trouvees, {len(candidates)} utilisables sur {start} -> {end}")
+          if locs and not candidates:
+              ex = locs[0]
+              print("  exemple:", ex.get("name"), ex.get("datetimeFirst"), ex.get("datetimeLast"))
+
+          rows = []
+          for loc, sensors in candidates[:MAX_STATIONS]:
+              coords = loc.get("coordinates") or {}
+              for s in sensors:
+                  page = 1
+                  while True:
+                      res = get(f"/sensors/{s['id']}/hours", {
+                          "datetime_from": dt_from, "datetime_to": dt_to,
+                          "limit": 1000, "page": page,
+                      }).get("results", [])
+                      for m in res:
+                          rows.append({
+                              "time": m["period"]["datetimeFrom"]["utc"],
+                              "value": m["value"],
+                              "parameter": m["parameter"]["name"],
+                              "unit": m["parameter"]["units"],
+                              "sensor_id": s["id"],
+                              "location_id": loc["id"],
+                              "location_name": loc.get("name"),
+                              "station_latitude": coords.get("latitude"),
+                              "station_longitude": coords.get("longitude"),
+                          })
+                      if len(res) < 1000:
+                          break
+                      page += 1
+
+          if not rows:
+              print(f"  -> aucune mesure pour {city}, rien ecrit")
+              continue
+
+          df = pd.DataFrame(rows)
+          df["time"] = pd.to_datetime(df["time"])
+          df["city"] = city
+          df["ingested_at"] = datetime.now(timezone.utc)
+
+          out_dir = f"/lake/raw/openaq/city={city}"
+          os.makedirs(out_dir, exist_ok=True)
+          path = f"{out_dir}/{start}_{end}.parquet"
+          df.to_parquet(path, index=False)
+          print(f"  -> {len(df)} lignes -> {path}")
