@@ -46,6 +46,9 @@ services:
           tasks:
             tmpDir:
               path: /tmp/kestra-wd/tmp
+            scripts:
+              docker:
+                volume-enabled: true
           url: http://localhost:8080/
 
 volumes:
