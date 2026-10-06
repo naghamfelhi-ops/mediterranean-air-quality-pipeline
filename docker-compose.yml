@@ -34,6 +34,7 @@ services:
             driverClassName: org.postgresql.Driver
             username: kestra
             password: ${POSTGRES_PASSWORD}
+        
         kestra:
           repository:
             type: postgres
@@ -49,8 +50,8 @@ services:
             scripts:
               docker:
                 volume-enabled: true
-          url: http://localhost:8080/
-
+          url: http://localhost:8080                                                                                                                                          
+      SECRET_OPENAQ_API_KEY: ${SECRET_OPENAQ_API_KEY}
 volumes:
   postgres-data:
   kestra-data:
