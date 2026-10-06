@@ -4,10 +4,10 @@ namespace: air_quality
 inputs:
   - id: start_date
     type: STRING
-    defaults: "2024-01-01"
+    defaults: "2025-11-05"
   - id: end_date
     type: STRING
-    defaults: "2024-01-31"
+    defaults: "2026-09-30"
 
 tasks:
   - id: fetch_openaq_to_lake
@@ -45,6 +45,7 @@ tasks:
       end = os.environ["END_DATE"]
       dt_from = f"{start}T00:00:00Z"
       dt_to = f"{end}T23:59:59Z"
+      expected_hours = ((pd.Timestamp(end) - pd.Timestamp(start)).days + 1) * 24
 
       def get(path, params):
           for _ in range(5):
@@ -75,13 +76,14 @@ tasks:
                   candidates.append((loc, sensors))
 
           print(f"{city}: {len(locs)} stations trouvees, {len(candidates)} utilisables sur {start} -> {end}")
-          if locs and not candidates:
-              ex = locs[0]
-              print("  exemple:", ex.get("name"), ex.get("datetimeFirst"), ex.get("datetimeLast"))
 
           rows = []
-          for loc, sensors in candidates[:MAX_STATIONS]:
+          kept = 0
+          for loc, sensors in candidates[:10]:
+              if kept >= MAX_STATIONS:
+                  break
               coords = loc.get("coordinates") or {}
+              loc_rows = []
               for s in sensors:
                   page = 1
                   while True:
@@ -90,7 +92,7 @@ tasks:
                           "limit": 1000, "page": page,
                       }).get("results", [])
                       for m in res:
-                          rows.append({
+                          loc_rows.append({
                               "time": m["period"]["datetimeFrom"]["utc"],
                               "value": m["value"],
                               "parameter": m["parameter"]["name"],
@@ -104,6 +106,12 @@ tasks:
                       if len(res) < 1000:
                           break
                       page += 1
+              if len(loc_rows) >= 0.25 * expected_hours:
+                  rows.extend(loc_rows)
+                  kept += 1
+              else:
+                  print(f"  station ignoree (trop de trous): {loc.get('name')} ({len(loc_rows)} lignes)")
+          print(f"  {kept} stations retenues")
 
           if not rows:
               print(f"  -> aucune mesure pour {city}, rien ecrit")
