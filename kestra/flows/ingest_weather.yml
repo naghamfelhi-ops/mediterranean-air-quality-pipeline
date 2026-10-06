@@ -4,10 +4,10 @@ namespace: air_quality
 inputs:
   - id: start_date
     type: STRING
-    defaults: "2024-01-01"
+    defaults: "2025-11-05"
   - id: end_date
     type: STRING
-    defaults: "2024-01-31"
+    defaults: "2026-09-30"
 
 tasks:
   - id: fetch_weather_to_lake
