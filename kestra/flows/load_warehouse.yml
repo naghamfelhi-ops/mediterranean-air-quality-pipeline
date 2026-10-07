@@ -1,0 +1,48 @@
+id: load_warehouse
+namespace: air_quality
+
+tasks:
+  - id: load_raw_to_duckdb
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: python:3.11-slim
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      volumes:
+        - air_quality_lake:/lake
+    beforeCommands:
+        - pip install duckdb pytz > /dev/null
+    script: |
+      import os, glob
+      import duckdb
+
+      # Nettoyage unique : on supprime les fichiers de test de janvier 2024
+      for f in glob.glob("/lake/raw/*/*/2024-01-01_2024-01-31.parquet"):
+          os.remove(f)
+          print("supprime:", f)
+
+      os.makedirs("/lake/warehouse", exist_ok=True)
+      con = duckdb.connect("/lake/warehouse/air_quality.duckdb")
+      con.execute("CREATE SCHEMA IF NOT EXISTS raw")
+
+      sources = {
+          "air_quality_modeled": "/lake/raw/air_quality/*/*.parquet",
+          "weather": "/lake/raw/weather/*/*.parquet",
+          "openaq_measurements": "/lake/raw/openaq/*/*.parquet",
+      }
+
+      for table, pattern in sources.items():
+          con.execute(f"""
+              CREATE OR REPLACE TABLE raw.{table} AS
+              SELECT * FROM read_parquet('{pattern}',
+                  union_by_name=true, hive_partitioning=false)
+          """)
+          n = con.execute(f"SELECT count(*) FROM raw.{table}").fetchone()[0]
+          print(f"raw.{table}: {n} lignes")
+          rows = con.execute(f"""
+              SELECT city, count(*) AS lignes, min(time) AS debut, max(time) AS fin
+              FROM raw.{table} GROUP BY city ORDER BY city
+          """).fetchall()
+          for r in rows:
+              print("   ", r)
+
+      con.close()
