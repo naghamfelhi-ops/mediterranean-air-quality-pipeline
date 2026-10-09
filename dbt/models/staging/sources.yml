@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: air_quality_modeled
+      - name: weather
+      - name: openaq_measurements
