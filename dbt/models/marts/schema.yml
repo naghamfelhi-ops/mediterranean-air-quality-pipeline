@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: mart_air_quality_hourly
+    columns:
+      - name: city
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['Tunis', 'Madrid', 'Barcelona', 'Rome', 'Athens', 'Beirut']
+      - name: observed_at
+        data_tests:
+          - not_null
+
+  - name: mart_air_quality_daily
+    columns:
+      - name: city
+        data_tests:
+          - not_null
+      - name: day
+        data_tests:
+          - not_null
