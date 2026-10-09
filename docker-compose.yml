@@ -27,6 +27,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
     environment:
+      SECRET_OPENAQ_API_KEY: ${SECRET_OPENAQ_API_KEY}
       KESTRA_CONFIGURATION: |
         datasources:
           postgres:
@@ -34,7 +35,6 @@ services:
             driverClassName: org.postgresql.Driver
             username: kestra
             password: ${POSTGRES_PASSWORD}
-        
         kestra:
           repository:
             type: postgres
@@ -51,9 +51,18 @@ services:
             configurations:
               - type: io.kestra.plugin.scripts.runner.docker.Docker
                 values:
-                  volume-enabled: true 
-          url: http://localhost:8080                                                                                                                                          
-      SECRET_OPENAQ_API_KEY: ${SECRET_OPENAQ_API_KEY}
+                  volume-enabled: true
+          url: http://localhost:8080/
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - air_quality_lake:/lake
+
 volumes:
   postgres-data:
   kestra-data:
+  air_quality_lake:
+    external: true
