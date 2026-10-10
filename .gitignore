@@ -220,3 +220,7 @@ __marimo__/
 .env
 data/
 *.duckdb
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/.user.yml

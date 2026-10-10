@@ -7,3 +7,7 @@ select
     wind_speed_10m as wind_speed_kmh,
     wind_direction_10m as wind_direction_deg
 from {{ source('raw', 'weather') }}
+qualify row_number() over (
+    partition by city, cast(time as timestamp)
+    order by ingested_at desc
+) = 1

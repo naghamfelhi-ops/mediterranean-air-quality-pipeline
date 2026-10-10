@@ -8,3 +8,7 @@ select
     sulphur_dioxide as so2,
     carbon_monoxide as co
 from {{ source('raw', 'air_quality_modeled') }}
+qualify row_number() over (
+    partition by city, cast(time as timestamp)
+    order by ingested_at desc
+) = 1
