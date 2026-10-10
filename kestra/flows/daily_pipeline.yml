@@ -1,0 +1,65 @@
+id: daily_pipeline
+namespace: air_quality
+description: Ingestion quotidienne (fenêtre glissante), chargement du warehouse et transformations dbt
+
+variables:
+  start_date: "{{ execution.startDate | dateAdd(-14, 'DAYS') | date('yyyy-MM-dd') }}"
+  end_date: "{{ execution.startDate | dateAdd(-7, 'DAYS') | date('yyyy-MM-dd') }}"
+
+tasks:
+  - id: ingest_sources
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: ingest_air_quality
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: air_quality
+        flowId: ingest_air_quality
+        wait: true
+        transmitFailed: true
+        inputs:
+          start_date: "{{ vars.start_date }}"
+          end_date: "{{ vars.end_date }}"
+
+      - id: ingest_weather
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: air_quality
+        flowId: ingest_weather
+        wait: true
+        transmitFailed: true
+        inputs:
+          start_date: "{{ vars.start_date }}"
+          end_date: "{{ vars.end_date }}"
+
+      - id: ingest_openaq
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: air_quality
+        flowId: ingest_openaq
+        wait: true
+        transmitFailed: true
+        inputs:
+          start_date: "{{ vars.start_date }}"
+          end_date: "{{ vars.end_date }}"
+
+  - id: load_warehouse
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: air_quality
+    flowId: load_warehouse
+    wait: true
+    transmitFailed: true
+
+  - id: dbt_build
+    type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: air-quality-dbt:latest
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+      volumes:
+        - air_quality_lake:/lake
+    commands:
+      - cd /dbt && dbt build --profiles-dir .
+
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 20 * * *"
+    timezone: Africa/Tunis
