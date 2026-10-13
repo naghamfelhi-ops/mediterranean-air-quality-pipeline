@@ -1,0 +1,19 @@
+cities:
+  Tunis:
+    latitude: 36.81
+    longitude: 10.18
+  Madrid:
+    latitude: 40.42
+    longitude: -3.70
+  Barcelona:
+    latitude: 41.39
+    longitude: 2.17
+  Rome:
+    latitude: 41.90
+    longitude: 12.50
+  Athens:
+    latitude: 37.98
+    longitude: 23.73
+  Beirut:
+    latitude: 33.89
+    longitude: 35.50
